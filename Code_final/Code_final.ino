@@ -18,11 +18,12 @@ Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 
 uint8_t id;
 
+
 int vermelho = 9, verde = 8;
 
 void setup() {
-  Serial.begin(9600);
   while (!Serial);  // For Yun/Leo/Micro/Zero/...
+  Serial.begin(9600);
   delay(100);
   Serial.println("\n\nProcurando Leitor Biométrico...");
 
@@ -70,7 +71,7 @@ void loop() {
   Serial.println("Selecione uma opção");
   Serial.println("1)Cadastrar digital");
   Serial.println("2)Buscar digital");
-  Serial.println("3)Delete digital");
+  Serial.println("3)Extrair Digital");
   Serial.println("----------------------------");
 
   int option = readnumber();
@@ -80,6 +81,7 @@ void loop() {
     Serial.println("Digite o número de ID (de 1 a 127) para cadastrar um dedo.");
     id = readnumber();
     while (!  getFingerprintEnroll() );
+    
   }
 
 //MATCHING
@@ -102,10 +104,16 @@ void loop() {
     }
     getFingerprintID();
   }
+
+  if(option == 3){
+    downloadFingerprintTemplate(10);
+  }
   
 
 }
 
+
+//Função de cadastrar digital
 uint8_t getFingerprintEnroll() {
   
   int p = -1;
@@ -248,6 +256,8 @@ uint8_t getFingerprintEnroll() {
   return true;
 }
 
+
+//Função de matching
 uint8_t getFingerprintID() {
   while(1!=2){
     uint8_t p = finger.getImage();
@@ -327,6 +337,117 @@ uint8_t getFingerprintID() {
   
     return finger.fingerID;
   }
+}
+
+//Função de download template
+
+uint8_t downloadFingerprintTemplate(uint16_t id){
+  
+  Serial.println("------------------------------------");
+  Serial.print("Tentando carregar #"); Serial.println(id);
+  uint8_t p = finger.loadModel(id);
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.print("Template "); Serial.print(id); Serial.println(" Carregado");
+      break;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Erro de comunicação");
+      return p;
+    default:
+      Serial.print("Erro desconhecido"); Serial.println(p);
+      return p;
+  }
+
+  // OK success!
+
+  Serial.print("Tentando obter #"); Serial.println(id);
+  p = finger.getModel();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.print("Template "); Serial.print(id); Serial.println(" transferindo:");
+      break;
+   default:
+      Serial.print("Erro desconhecido"); Serial.println(p);
+      return p;
+  }
+  
+  // one data packet is 267 bytes. in one data packet, 11 bytes are 'usesless' :D
+  
+  uint8_t bytesReceived[534]; // 2 data packets
+  memset(bytesReceived, 0xff, 534);
+  
+  uint32_t starttime = millis();
+  int i = 0;
+  
+  while (i < 534 && (millis() - starttime) < 20000) {
+      //Serial.println(mySerial.available());
+      if (mySerial.available()) {
+          bytesReceived[i++] = mySerial.read();
+      }
+  }
+  Serial.print(i); Serial.println(" bytes read.");
+  Serial.println("Decoding packet...");
+
+  uint8_t fingerTemplate[512]; // the real template
+  memset(fingerTemplate, 0xff, 512);
+  
+  // filtering only the data packets
+  int uindx = 9, index = 0;
+  while (index < 534) {
+      while (index < uindx) ++index;
+      uindx += 256;
+      while (index < uindx) {
+          fingerTemplate[index++] = bytesReceived[index];
+      }
+      uindx += 2;
+      while (index < uindx) ++index;
+      uindx = index + 9;
+  }
+  for (int i = 0; i < 512; ++i) {
+      //Serial.print("0x");
+      printHex(fingerTemplate[i], 2);
+      //Serial.print(", ");
+  }
+  Serial.println("\ndone.");
+
+  /*
+  uint8_t templateBuffer[256];
+  memset(templateBuffer, 0xff, 256);  //zero out template buffer
+  int index=0;
+  uint32_t starttime = millis();
+  while ((index < 256) && ((millis() - starttime) < 1000))
+  {
+    if (mySerial.available())
+    {
+      templateBuffer[index] = mySerial.read();
+      index++;
+    }
+  }
+  
+  Serial.print(index); Serial.println(" bytes read");
+  
+  //dump entire templateBuffer.  This prints out 16 lines of 16 bytes
+  for (int count= 0; count < 16; count++)
+  {
+    for (int i = 0; i < 16; i++)
+    {
+      Serial.print("0x");
+      Serial.print(templateBuffer[count*16+i], HEX);
+      Serial.print(", ");
+    }
+    Serial.println();
+  }*/
+  
+}
+
+void printHex(int num, int precision) {
+    char tmp[16];
+    char format[128];
+ 
+    sprintf(format, "%%.%dX", precision);
+ 
+    sprintf(tmp, format, num);
+    Serial.print(tmp);
 }
 
 int getFingerprintIDez() {
